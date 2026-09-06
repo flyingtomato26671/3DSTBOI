@@ -1,0 +1,12 @@
+BasicInfo:
+    Title: isaac-manual
+    ProductCode: CTR-P-CTAP
+    ContentType: Manual
+TitleInfo:
+    Category: Application
+    UniqueId: 0xf7009
+Option:
+    UseOnSD: true
+    FreeProductCode: true
+    EnableCrypt: false
+    MediaFootPadding: false
