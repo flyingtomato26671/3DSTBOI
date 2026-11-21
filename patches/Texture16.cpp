@@ -1,9 +1,16 @@
 #include "Texture16.h"
 
 namespace IsaacOld {
+    extern "C" {
+    const volatile unsigned char DitherStrength = 2;
+    }
+
     constexpr unsigned int TileIndex(unsigned int x, unsigned int y, unsigned int width);
+    constexpr unsigned int DitherThreshold(unsigned int x, unsigned int y, unsigned int strength);
+    constexpr unsigned int Quantize(unsigned int value, unsigned int maximum, unsigned int threshold);
     constexpr unsigned short PackColor(unsigned int format, unsigned int red, unsigned int green,
-        unsigned int blue, unsigned int alpha);
+        unsigned int blue, unsigned int alpha, unsigned int threshold);
+    constexpr unsigned int Clamp255(unsigned int value);
     bool IsPackedTexture(const unsigned char *texture);
 }
 
@@ -18,13 +25,37 @@ constexpr unsigned int IsaacOld::TileIndex(unsigned int x, unsigned int y, unsig
     return tile + morton;
 }
 
+// Ordered 4x4 Bayer dither, centered on 127 so that strength 0 is plain round-to-nearest.
+// Every channel of a pixel shares one threshold, which keeps the noise gray instead of colored.
+constexpr unsigned int IsaacOld::DitherThreshold(unsigned int x, unsigned int y, unsigned int strength) {
+    const auto column = x & 3;
+    const auto row = y & 3;
+    const auto mixed = column ^ row;
+    const auto level = ((mixed & 1) << 3) | ((row & 1) << 2) | (mixed & 2) | ((row >> 1) & 1);
+    const auto centered = static_cast<int>(level * 16 + 8) - 127;
+    const auto amount = strength > 2 ? 2 : static_cast<int>(strength);
+    return static_cast<unsigned int>(127 + ((centered * amount) >> 1));
+}
+
+// floor((value * maximum + threshold) / 255) without a division; exact below 65535.
+constexpr unsigned int IsaacOld::Quantize(unsigned int value, unsigned int maximum, unsigned int threshold) {
+    const auto scaled = value * maximum + threshold;
+    return (scaled + 1 + (scaled >> 8)) >> 8;
+}
+
+constexpr unsigned int IsaacOld::Clamp255(unsigned int value) {
+    return value > 255 ? 255 : value;
+}
+
 constexpr unsigned short IsaacOld::PackColor(unsigned int format, unsigned int red, unsigned int green,
-    unsigned int blue, unsigned int alpha) {
+    unsigned int blue, unsigned int alpha, unsigned int threshold) {
     if (format == 1) {
-        return ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3);
+        return static_cast<unsigned short>((Quantize(red, 31, threshold) << 11) |
+            (Quantize(green, 63, threshold) << 5) | Quantize(blue, 31, threshold));
     }
 
-    return ((red >> 4) << 12) | ((green >> 4) << 8) | ((blue >> 4) << 4) | (alpha >> 4);
+    return static_cast<unsigned short>((Quantize(red, 15, threshold) << 12) | (Quantize(green, 15, threshold) << 8) |
+        (Quantize(blue, 15, threshold) << 4) | Quantize(alpha, 15, threshold));
 }
 
 int IsaacOld::SwizzleTexture(unsigned int format, unsigned int width, unsigned int height,
@@ -34,11 +65,12 @@ int IsaacOld::SwizzleTexture(unsigned int format, unsigned int width, unsigned i
     }
 
     const auto channels = format == 1 ? 3u : 4u;
+    const auto strength = static_cast<unsigned int>(DitherStrength);
     for (auto y = 0u; y < height; ++y) {
         for (auto x = 0u; x < width; ++x) {
             const auto alpha = format == 1 ? 255u : source[3];
             destination[TileIndex(x, height - y - 1, width)] =
-                PackColor(format, source[0], source[1], source[2], alpha);
+                PackColor(format, source[0], source[1], source[2], alpha, DitherThreshold(x, y, strength));
             source += channels;
         }
     }
@@ -82,10 +114,11 @@ float *IsaacOld::ReadPixel(float *result, unsigned char *texture, unsigned int x
 
 int IsaacOld::WritePixel(unsigned char *texture, unsigned int x, unsigned int y, const float *color) {
     auto *pixel = PixelAddress(texture, x, y);
-    *pixel = PackColor(texture[24], static_cast<unsigned int>(color[0] * 255.0f),
-        static_cast<unsigned int>(color[1] * 255.0f),
-        static_cast<unsigned int>(color[2] * 255.0f),
-        static_cast<unsigned int>(color[3] * 255.0f));
+    *pixel = PackColor(texture[24], Clamp255(static_cast<unsigned int>(color[0] * 255.0f)),
+        Clamp255(static_cast<unsigned int>(color[1] * 255.0f)),
+        Clamp255(static_cast<unsigned int>(color[2] * 255.0f)),
+        Clamp255(static_cast<unsigned int>(color[3] * 255.0f)),
+        DitherThreshold(x, y, static_cast<unsigned int>(DitherStrength)));
     return 1;
 }
 

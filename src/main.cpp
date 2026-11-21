@@ -15,6 +15,9 @@ void Isaac3ds::PrintHelp() {
                  "  --tools-dir DIRECTORY   Folder containing ctrtool and makerom\n"
                  "  --seeddb FILE           Local seeddb.bin for encrypted titles\n"
                  "  --seed-file FILE        Local 16-byte title seed instead of seeddb\n"
+                 "  --heap-mib N            EXPERIMENTAL: ordinary heap size in MiB, 32 to 47 (default 42)\n"
+                 "                          Lower values leave more memory for textures; higher values for audio\n"
+                 "  --dither off|light|full Texture dithering to hide banding in gradients (default full)\n"
                  "  --dry-run               Decrypt and check all patches without building a CIA\n"
                  "  -h, --help              Show this help\n\n"
                  "The input is never modified and existing outputs are never overwritten.\n"
@@ -52,6 +55,33 @@ int Isaac3ds::Main(const std::vector<std::string> &arguments) {
                 options.seedDatabase = value();
             } else if (argument == "--seed-file") {
                 options.seedFile = value();
+            } else if (argument == "--heap-mib") {
+                const auto text = value().u8string();
+                auto consumed = std::size_t{0};
+                auto number = 0UL;
+                try {
+                    number = std::stoul(text, &consumed);
+                } catch (const std::exception &) {
+                    consumed = 0;
+                }
+
+                if (consumed == 0 || consumed != text.size() || number < minimumHeapMiB || number > maximumHeapMiB) {
+                    throw std::runtime_error("--heap-mib needs a whole number from " + std::to_string(minimumHeapMiB) +
+                                             " to " + std::to_string(maximumHeapMiB));
+                }
+
+                options.heapMiB = static_cast<std::uint32_t>(number);
+            } else if (argument == "--dither") {
+                const auto text = value().u8string();
+                if (text == "off") {
+                    options.dither = 0;
+                } else if (text == "light") {
+                    options.dither = 1;
+                } else if (text == "full") {
+                    options.dither = 2;
+                } else {
+                    throw std::runtime_error("--dither must be off, light, or full");
+                }
             } else if (argument == "--dry-run") {
                 options.dryRun = true;
             } else if (!argument.empty() && argument.front() == '-') {

@@ -11,6 +11,8 @@ namespace Isaac3ds {
         std::filesystem::path seedDatabase;
         std::filesystem::path seedFile;
         bool dryRun = false;
+        std::uint32_t heapMiB = defaultHeapMiB;
+        std::uint8_t dither = defaultDither;
     };
 
     void RunPatcher(const TOptions &options);
