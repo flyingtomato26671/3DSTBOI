@@ -2,7 +2,7 @@
 
 Patches The Binding of Isaac: Rebirth to run on the original 3DS, with lower memory use and controls for its Circle Pad and buttons.
 
-Version 0.1.0 includes the RC1 patch set, tested in Azahar and on a physical Old 3DS. You need your own European v2.4.0 CIA and a console running CFW. No game files or title seeds are included.
+Version 0.1.0 includes the RC1 patch set, tested in Azahar and on a physical Old 3DS, plus smoother texture gradients (dithering) and tunable memory settings. You need your own European v2.4.0 CIA and a console running CFW. No game files or title seeds are included.
 
 ## Before you start
 
@@ -146,6 +146,16 @@ If saved bindings override these defaults, reset them in the main menu's **Optio
 | Colors or transparency look different | Textures use lower color and alpha precision to reduce memory use. |
 
 Run `--help` for all options. Include the patch report and console/crash details when reporting a problem, without game files or seeds.
+
+## Known issues and tuning
+
+Old 3DS memory is tight, and the reports so far are consistent with memory pressure rather than CPU speed: music that is missing or choppy (shorter tracks like the shop theme work), a previous room's background staying, doors disappearing, and crashes against Mom. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
+
+```sh
+./isaac3ds-patcher "Isaac.cia" --seed-file "title-seed.bin" --heap-mib 45 -o "Isaac-heap45.cia"
+```
+
+Higher values favor audio; lower values favor graphics. Patched CIAs share one title ID, so install one at a time. If gradients look grainy rather than smooth, try `--dither light`; `--dither off` restores plain rounding. Settings other than the defaults are listed as experimental in the report.
 
 ## Automatic builds and releases
 

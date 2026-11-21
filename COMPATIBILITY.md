@@ -14,13 +14,15 @@ Original decompressed executable SHA-256:
 674c7d31063abb3daa3f22c0e67da1e83d1a6e65725915dab34783d7f432882e
 ```
 
-Patched executable SHA-256 (patcher 0.1.0 / RC1):
+Patched executable SHA-256 of the RC1 build, which the patcher now only uses to recognize already-patched input:
 
 ```text
 d4eee88f5ad206c04e495ee42ba92330a2bce7935dba71b47582a54bd1b9b4e3
 ```
 
-RC1 has been tested on a physical Old 3DS. Azahar in Old 3DS mode at 100% CPU timing also passed boot, gameplay, room transitions, movement, shooting, bombing, death/restart, and save/resume. It reported 60 FPS at roughly 100% emulation speed in the tested rooms; this is not a physical-console FPS measurement.
+The current build adds dithering and a different payload, so its executable hash is different and is not pinned yet. The patch report prints it as `Patched executable SHA-256`. Once the build has been tested on a console, copy that value into `pinnedPatchedCodeHash` in `src/Patches.h` and the patcher will enforce it for default settings.
+
+RC1 has been tested on a physical Old 3DS; the dithering build has been tested for payload correctness in an emulator but not yet on hardware. Azahar in Old 3DS mode at 100% CPU timing also passed boot, gameplay, room transitions, movement, shooting, bombing, death/restart, and save/resume. It reported 60 FPS at roughly 100% emulation speed in the tested rooms; this is not a physical-console FPS measurement.
 
 Texture conversion, GPU binding, pixel access, scratch reuse, and default controls passed ARM execution checks. Full CIA rebuilds passed on Linux and with the Windows executable under Wine, including re-extraction of the expected code, icon, system profile, banner, manual, and unchanged game resources. The authored payload recompiled byte-for-byte with LLVM 22.1.8.
 

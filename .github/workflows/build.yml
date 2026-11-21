@@ -44,6 +44,8 @@ jobs:
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DISAAC3DS_FETCH_TOOLS=ON
       - name: Build
         run: cmake --build build --config Release --parallel 2
+      - name: Run unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
       - name: Package and smoke test
         run: python scripts/packageRelease.py --platform ${{ matrix.platform }} --binary-dir ${{ matrix.binaryDir }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -53,9 +55,37 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  payload:
+    # Recompiles the ARM texture payload with the pinned LLVM, checks it against src/TextureData.h,
+    # and runs it in an emulator against a Python model. No game files are involved.
+    runs-on: ubuntu-24.04
+    env:
+      LLVM_VERSION: 22.1.8
+      LLVM_SHA256: df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned LLVM
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/LLVM-${LLVM_VERSION}-Linux-X64.tar.xz"
+          echo "${LLVM_SHA256}  llvm.tar.xz" | sha256sum --check
+          mkdir llvm
+          tar -xf llvm.tar.xz -C llvm --strip-components=1 --wildcards \
+            '*/bin/clang*' '*/bin/ld.lld' '*/bin/lld' '*/bin/llvm-objcopy' '*/bin/llvm-nm' '*/lib/clang/*'
+          echo "$PWD/llvm/bin" >> "$GITHUB_PATH"
+      - name: Install emulator
+        run: python3 -m venv .venv && .venv/bin/pip install unicorn
+      - name: Verify embedded payload
+        run: python3 patches/verifyTexturePayload.py --output build/payload
+      - name: Emulate payload
+        run: .venv/bin/python patches/testTexturePayload.py --output build/payload-test
+
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, payload]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

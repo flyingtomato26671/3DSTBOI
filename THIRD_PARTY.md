@@ -9,6 +9,6 @@
 
 Release packages include the utilities, their upstream source archives under `tools/sources`, and notices under `licenses`. Makerom's bundled BLZ code uses GPLv3 or later; the complete tagged source and GPL text accompany the binary. Preserve these when redistributing the packages.
 
-Optional payload verification uses Python 3 and LLVM 22.1.8. Normal patcher builds do not need an ARM compiler.
+Optional payload verification uses Python 3 and LLVM 22.1.8; the payload emulation test also uses the [unicorn](https://github.com/unicorn-engine/unicorn) Python package. Normal patcher builds do not need an ARM compiler.
 
 Dependencies retain their own licences. The patcher's MIT licence does not cover Isaac or these tools.

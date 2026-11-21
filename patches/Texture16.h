@@ -2,6 +2,10 @@
 
 namespace IsaacOld {
     extern "C" {
+    // Dither amount, written by the host patcher: 0 rounds to nearest, 1 adds half-strength
+    // ordered dithering, 2 adds full-strength ordered dithering. It is volatile so the
+    // compiler cannot fold the default into the code.
+    extern const volatile unsigned char DitherStrength;
     int SwizzleTexture(unsigned int format, unsigned int width, unsigned int height,
         const unsigned char *source, unsigned short *destination);
     unsigned short *PixelAddress(unsigned char *texture, unsigned int x, unsigned int y);

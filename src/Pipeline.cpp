@@ -217,7 +217,12 @@ std::vector<std::string> Isaac3ds::HashMarkers() {
 }
 
 void Isaac3ds::RunPatcher(const TOptions &options) {
-    const auto input = std::filesystem::canonical(options.input);
+    auto pathError = std::error_code{};
+    const auto input = std::filesystem::canonical(options.input, pathError);
+    if (pathError) {
+        throw std::runtime_error("Cannot open the input CIA: " + PathText(options.input) + " (" + pathError.message() + ")");
+    }
+
     if (!std::filesystem::is_regular_file(input)) {
         throw std::runtime_error("Input must be a regular CIA file");
     }
@@ -301,7 +306,7 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
     const auto originalRomfsHash = Sha256File(work / "romfs.bin");
     std::cout << "Checking the complete patch profile..." << std::endl;
     const auto patched = PatchGame(ReadFile(work / "exefs/code.bin"), exheader,
-        ReadFile(work / "exefs/icon.bin"));
+        ReadFile(work / "exefs/icon.bin"), TPatchOptions{options.heapMiB, options.dither});
     std::cout << patched.report;
     auto manualArguments = std::vector<std::string>{"-v", "-y", "-n", "1", "--romfs=" + PathText(work / "manual-romfs.bin")};
     if (!seedDatabase.empty()) {
@@ -365,7 +370,7 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
     }
 
     const auto verifiedExheader = ReadFile(work / "verify-exheader.bin");
-    VerifyRebuiltProfile(verifiedExheader);
+    VerifyRebuiltProfile(verifiedExheader, patched.exheader);
     for (const auto offset : {0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x30, 0x34, 0x38, 0x3c}) {
         if (Read32(verifiedExheader, static_cast<std::size_t>(offset)) != Read32(patched.exheader, static_cast<std::size_t>(offset))) {
             throw std::runtime_error("Rebuild changed the executable memory layout");
@@ -378,7 +383,7 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
 
     const auto outputHash = Sha256File(work / "output.cia");
     auto report = std::ostringstream{};
-    report << "Isaac Old 3DS Patcher 0.1.0\nInput CIA SHA-256: " << inputHash << "\nOutput CIA SHA-256: " << outputHash << "\nTitle ID: " << HexNumber(metadata.titleId, 16) << "\nTitle version: " << metadata.version << "\nProduct code: " << productCode << "\n"
+    report << "Isaac Old 3DS Patcher " ISAAC3DS_VERSION "\nInput CIA SHA-256: " << inputHash << "\nOutput CIA SHA-256: " << outputHash << "\nTitle ID: " << HexNumber(metadata.titleId, 16) << "\nTitle version: " << metadata.version << "\nProduct code: " << productCode << "\n"
            << patched.report << "Input file unchanged. Package hashes and re-extracted payload verified.\n"
            << "Unencrypted CFW package. Ticket/TMD version restored after test-key signing. Retail signatures are invalid.\n"
            << "Original game assets, banner, electronic manual, and 4 MiB save allocation preserved.\n"
