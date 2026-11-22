@@ -149,7 +149,7 @@ Run `--help` for all options. Include the patch report and console/crash details
 
 ## Known issues and tuning
 
-Old 3DS memory is tight, and the reports so far are consistent with memory pressure rather than CPU speed: music that is missing or choppy (shorter tracks like the shop theme work), a previous room's background staying, doors disappearing, and crashes against Mom. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
+Old 3DS memory is tight. Music remains inconsistent: many tracks stutter or stop. A guitar-like intensity layer heard in a room with many enemies reportedly plays almost cleanly, but the regular music does not continue underneath it and only resumes after the music is reloaded. Ordinary boss music reportedly stops after only a few seconds and does not resume. This is distinct from the boss-defeat track, which lasted approximately 1 minute 37 seconds in an earlier test. Overall performance appears slightly improved, but still needs work. Missing/stale graphics and crashes against Mom also remain reported. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
 
 ```sh
 ./isaac3ds-patcher "Isaac.cia" --seed-file "title-seed.bin" --heap-mib 45 -o "Isaac-heap45.cia"
@@ -157,7 +157,7 @@ Old 3DS memory is tight, and the reports so far are consistent with memory press
 
 Higher values favor audio; lower values favor graphics. Patched CIAs share one title ID, so install one at a time. If gradients look grainy rather than smooth, try `--dither light`; `--dither off` restores plain rounding. Settings other than the defaults are listed as experimental in the report.
 
-Which cause it is has not been confirmed. Another candidate is a thread meant for the New 3DS extra core that cannot run properly on an Old 3DS. See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the observations, hypotheses, and the experiments that tell them apart. To help analyze your own copy, `--dry-run --dump-code code-original.bin` saves the decrypted original executable; do not share or commit it.
+The cause has not been confirmed. Static inspection of the original executable has not supported the earlier New 3DS extra-core thread theory in the inspected paths; audio buffering, scheduling, and memory pressure remain open possibilities. See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the current observations and targeted experiments. To help analyze your own copy, `--dry-run --dump-code code-original.bin` saves the decrypted original executable; do not share or commit it.
 
 ## Automatic builds and releases
 

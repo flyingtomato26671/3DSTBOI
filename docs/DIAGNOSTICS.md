@@ -1,49 +1,51 @@
 # Diagnostics: music, missing sprites, stale rooms, and frame rate
 
-Working notes for the Old 3DS build. Hardware observations come from play-testing on a physical Old 3DS; nothing below about the game's internals is confirmed until it is checked against the pinned executable (see [compatibility](../COMPATIBILITY.md)).
+Working notes for the Old 3DS build. Physical-console observations below are reports from testing on a real Old 3DS. Static executable findings are limited to the exact original executable identified in [compatibility](../COMPATIBILITY.md).
 
 ## What has been observed
 
 | Symptom | Observation |
 | --- | --- |
-| Music | Most tracks stop after 1-3 seconds. Shop and secret-room tracks last a bit longer, the basement track once lasted about 8 seconds, and the boss-defeat jingle lasted about 3 minutes. Playback that does run is choppy and sometimes slows down or speeds up. |
-| Sprites | Some sprites never load, doors most often. |
-| Rooms | A room sometimes keeps the previous room's background or layout. |
-| Crashes | Mom's boss crashes the console. |
-| Frame rate | About 50-60 FPS in a 1v1 boss room even with many tears on screen. Rooms with many enemies lag. Fireplaces lag until they are put out. |
+| Music | On a physical Old 3DS, music still has stuttering, interruptions, and changes in playback speed, although one recent test suggests slight overall performance improvement. Most tracks have stopped after a few seconds in earlier tests. The boss-defeat track played for approximately 1 minute 37 seconds in the latest report. A separate guitar-like intensity layer/track heard in a room with many enemies plays almost perfectly, with very little stuttering, but the regular game music stops while it plays. The regular music does not continue underneath the guitar-like layer; it stops, and only resumes after the music is reloaded, for example by entering a room with exclusive music and then leaving it. The user reports a similar failure with ordinary boss music, which plays for only a few seconds and then does not resume. This is distinct from the boss-defeat track, which lasted approximately 1 minute 37 seconds in an earlier test. |
+| Dithering and transparency | The new ordered-dithering method has been tested on a physical Old 3DS. Its transparency effects look very good; preserve this working behavior when investigating audio. |
+| Sprites | Some sprites fail to load, with doors reported most often. |
+| Rooms | A room sometimes retains the previous room's background or layout. |
+| Crashes | Mom's boss has been reported to crash the console. |
+| Frame rate | Performance appears to have improved slightly in the latest hardware test, but still needs work. Earlier tests reported about 50-60 FPS in a 1v1 boss room even with many tears on screen. Rooms with many enemies lag, and fireplaces lag until extinguished. |
 
 ## Working hypotheses
 
-### 1. Threads that expect the New 3DS extra core (leading)
+### 1. Audio buffering, scheduling, or memory pressure (open)
 
-- The original title is New 3DS only, and this project's rebuild settings turn the extra-core permission off (`Access Core 2: NO` in `src/Pipeline.cpp`, `patches/isaac-old80.rsf`). A game that asks for that permission very likely starts worker threads on it.
-- According to [3dbrew's multi-threading page](https://www.3dbrew.org/wiki/Multi-threading), an Old 3DS has only cores 0 and 1, and an application cannot use core 1 unless it raises its CPU time limit. Scheduling is priority-based and first-in-first-out with no time slicing, so a worker sharing core 0 with a busy main thread only runs when the main thread blocks.
-- That would explain several symptoms at once: streamed music that starves or never gets going, loads that finish late or never (missing sprites, stale rooms), and a frame rate that depends on how busy the main thread is. Emulators are often more forgiving about core ids than hardware, so it would also explain why Azahar looked fine.
-- **Not confirmed.** It needs the thread-creation call sites in the executable: their processor id and priority arguments.
+The persistent music stutter and premature stops on real hardware are the main unresolved issue. The guitar-like intensity layer heard in a room with many enemies plays almost cleanly, but the normal music does not continue underneath it and is not restored when the layer ends. Ordinary boss music reportedly plays for only a few seconds before stopping as well. The boss-defeat track lasting approximately 1:37 is a separate observation and shows that not every track fails at the same point. This pattern makes continued playback, streaming/refill, decoder state, buffer ownership, and end-of-segment or loop handling important areas to investigate. These are hypotheses, not confirmed causes. The slight overall performance improvement does not establish that CPU load is the audio cause.
 
-### 2. Memory pressure from the heap split
+The heap split remains worth measuring: the default ordinary heap is 42 MiB and the remainder of the 80 MiB application memory is used for the linear heap. Raising `--heap-mib` may help ordinary allocations used by audio and game objects, but it reduces space available to textures. Compare the same scene and track at several heap settings and record both audio and graphics symptoms.
 
-- The patch splits 80 MiB between the ordinary heap (42 MiB by default) and the linear heap that holds textures. A failed texture allocation makes `UploadTexels` return 0, which would leave a stale or missing texture.
-- Test with `--heap-mib`. If symptoms barely change between 36 and 47, this is not the main cause.
+### 2. New 3DS extra-core thread assumption (not supported by inspected paths so far)
 
-### 3. Per-frame cost on a 268 MHz CPU
+The original executable was inspected against the SHA-256 in [compatibility](../COMPATIBILITY.md). The inspected thread-creation paths use processor ID `-2` (the ExHeader default) or an explicit processor ID of 1; no processor ID 2 or 3 was found in those paths. The executable also sends APT:SetApplicationCpuTimeLimit with a 30 percent value, which is consistent with enabling use of Old 3DS core 1.
 
-- Tears are cheap, so projectile handling is probably fine. Enemy updates and fireplaces (many particles and glow sprites, so possibly fill-rate rather than game logic) are the suspects.
-- Needs profiling data. A table of FPS per room type (empty, fireplace lit and out, N enemies, boss) would show whether the cost scales with entity count or with on-screen effects.
+This does not prove every thread path or scheduling detail is understood, but it means the claim that the game's workers are trying to use a New 3DS-only extra core should no longer be treated as the leading explanation. Do not enable `Access Core 2` as an unverified audio fix.
 
-## Experiments that need no reverse engineering
+### 3. Texture memory and missing graphics
 
-1. Play the same patched CIA in Azahar in Old 3DS mode. If music and sprites are fine there, hypothesis 1 gains weight.
-2. Build with `--heap-mib 36`, `42`, and `47` and note whether the music and sprite symptoms change.
-3. Fill the FPS table above for the default build and with `--dither off` (to rule out any conversion-related cost).
+The patch splits 80 MiB between the ordinary heap and the linear heap used for textures. A failed texture allocation can leave a stale or missing texture. The heap setting therefore remains relevant to missing doors, stale room backgrounds, and boss crashes. Any test that raises ordinary heap should also check whether it makes texture symptoms worse.
 
-## Data that would settle it
+### 4. Per-frame cost on a 268 MHz CPU
 
-Run the patcher with `--dry-run --dump-code code-original.bin` on your own CIA. The file is the decrypted original executable. It is for analysis only; never commit or share it (`*.bin` is already ignored). From it, find:
+Enemy updates and fireplaces remain possible causes of frame drops. The dithering conversion work runs when textures are loaded, not continuously for every rendered frame, so it is not currently a strong explanation for sustained slowdowns in rooms with many enemies or particles. FPS measurements by room type are still needed.
 
-- every `svc 0x08` (CreateThread) site, with the processor id and priority passed;
-- any call that sets the application CPU time limit;
-- how the audio and loading code is scheduled.
+## Experiments that distinguish the remaining causes
+
+1. Compare the same music track and playback interval at `--heap-mib 36`, `42`, and `47`. Record whether it stutters, changes speed, or stops, and whether sprites/rooms become worse.
+2. Repeat the same test with the same dither setting each time. Do not change dithering and heap size simultaneously.
+3. Record which track/layer is playing, elapsed playback time before it stops, room/enemy count, and whether playback resumes on its own. In particular, confirm whether ordinary boss music always stops after a few seconds and whether the guitar-like layer stops the normal track rather than mixing with it. Compare each track separately if possible.
+4. Record FPS in an empty room, with fireplaces lit and extinguished, and with increasing enemy counts. Keep this separate from the audio test.
+5. If available, compare a short track, the boss-defeat track, and the guitar-like intensity layer under identical conditions. The guitar-like layer's near-clean playback while the normal track is stopped is especially useful as a comparison case, not proof that the whole audio path is healthy.
+
+## Data that would narrow the audio cause
+
+The original executable's thread-creation and APT CPU-time-limit paths have already been inspected. The next useful reverse-engineering target is the audio path itself: identify its worker entry point, buffer sizes, refill cadence, decoder calls, and any allocation or synchronization failures. Do not patch an audio routine until its calling convention, buffer ownership, and timing assumptions are understood.
 
 ## Ground rules for collaborating (people or other AI tools)
 
