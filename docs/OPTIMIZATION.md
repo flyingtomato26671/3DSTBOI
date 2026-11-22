@@ -38,3 +38,11 @@ original executable, **[obs]** observed on a console, **[hyp]** hypothesis, **[?
 3. Entity update loop over all entities each frame (rooms with many enemies lag). [hyp]
 4. Allocation churn in per-frame code (heap size already tunable). [hyp]
 None of these has been measured; they need the counter first.
+
+### GSP findings (continued)
+- [exe] 0x17B454 is the GSP interrupt-event loop: it waits forever on an event handle (svc 0x24 on `[obj+0x2c]`), clears
+  it (svc 0x19) and then dispatches interrupts. It has no direct callers (it is a thread entry). It is a candidate place to
+  count VBlank interrupts, but that measures display refreshes, not game frames [?].
+- [exe] GSP IPC headers found: RegisterInterruptRelayQueue (0x17B704), FlushDataCache (0x17B650), AcquireRight (0x1645D8),
+  SetLcdForceBlack (0x1E27B8). SetBufferSwap / TriggerCmdReqQueue are not sent through IPC headers (shared-memory path).
+- [?] The game-frame boundary (where one frame of update+render ends) is still not identified.
