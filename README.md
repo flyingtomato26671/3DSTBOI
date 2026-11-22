@@ -149,7 +149,7 @@ Run `--help` for all options. Include the patch report and console/crash details
 
 ## Known issues and tuning
 
-Old 3DS memory is tight. Music remains inconsistent: many tracks stutter or stop, while one guitar-like intensity layer heard in a room with many enemies reportedly plays almost cleanly, but the regular music stops while it plays and only resumes after the music is reloaded. The boss-defeat track has lasted approximately 1 minute 37 seconds in the latest report. Overall performance appears slightly improved, but still needs work. Missing/stale graphics and crashes against Mom also remain reported. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
+Old 3DS memory is tight. Music remains inconsistent: many tracks stutter or stop. A guitar-like intensity layer heard in a room with many enemies reportedly plays almost cleanly, but the regular music does not continue underneath it and only resumes after the music is reloaded. Ordinary boss music reportedly stops after only a few seconds and does not resume. This is distinct from the boss-defeat track, which lasted approximately 1 minute 37 seconds in an earlier test. Overall performance appears slightly improved, but still needs work. Missing/stale graphics and crashes against Mom also remain reported. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
 
 ```sh
 ./isaac3ds-patcher "Isaac.cia" --seed-file "title-seed.bin" --heap-mib 45 -o "Isaac-heap45.cia"
