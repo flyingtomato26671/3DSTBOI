@@ -62,3 +62,11 @@ decoding worker needs more than that when the scene is busy, so the DSP runs dry
 experiment to confirm or discard the hypothesis, not a fix. Suggested test: build with `--cpu-limit 50`, play a basement
 floor with several enemies, and note how long the floor music lasts and whether the frame rate changes. Repeat with 70.
 A very high value may starve system services, so raise it gradually. If nothing changes, the hypothesis is discarded.
+
+## `--dump-romfs`: data tables and audio parameters
+
+`--dump-romfs FOLDER` (works with `--dry-run`) saves, from your own copy, into a new folder: `listing.txt` (size and path of
+every file), `ogg-info.txt` (channels, sample rate, nominal bitrate and duration of every `.ogg`), and a copy of the small
+`.xml` and `.anm2` data files under `files/`. It never copies audio or textures and never overwrites anything. It is meant
+for analysis of your own copy: do not share or commit it. The tables (`music.xml`, `sounds.xml`, entities) and the audio
+parameters let the music problem be studied without guessing.

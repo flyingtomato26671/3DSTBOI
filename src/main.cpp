@@ -22,6 +22,8 @@ void Isaac3ds::PrintHelp() {
                  "                          the game's own value). Raises the share of core 1 given to the game's workers\n"
                  "  --dump-code FILE        Also save the decrypted original executable (code.bin) for analysis\n"
                  "                          of your own copy; never share or commit it\n"
+                 "  --dump-romfs FOLDER     Also save a file listing, audio parameters and the small .xml/.anm2 data files\n"
+                 "                          of your own copy (a new folder; never share or commit it)\n"
                  "  --dry-run               Decrypt and check all patches without building a CIA\n"
                  "  -h, --help              Show this help\n\n"
                  "The input is never modified and existing outputs are never overwritten.\n"
@@ -91,6 +93,8 @@ int Isaac3ds::Main(const std::vector<std::string> &arguments) {
                 }
 
                 options.cpuLimit = static_cast<std::uint32_t>(number);
+            } else if (argument == "--dump-romfs") {
+                options.dumpRomfs = value();
             } else if (argument == "--dump-code") {
                 options.dumpCode = value();
             } else if (argument == "--dither") {

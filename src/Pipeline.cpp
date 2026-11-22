@@ -1,4 +1,5 @@
 #include "Pipeline.h"
+#include "RomFs.h"
 #include "RebuildData.h"
 
 #include <algorithm>
@@ -247,6 +248,18 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
         }
     }
 
+    auto dumpRomfsPath = std::filesystem::path{};
+    if (!options.dumpRomfs.empty()) {
+        dumpRomfsPath = std::filesystem::weakly_canonical(std::filesystem::absolute(options.dumpRomfs));
+        if (std::filesystem::exists(dumpRomfsPath) || std::filesystem::exists(dumpRomfsPath.native() + std::filesystem::path(".partial").native())) {
+            throw std::runtime_error("The --dump-romfs folder already exists. Choose a new name; files are never overwritten.");
+        }
+
+        if (!std::filesystem::is_directory(dumpRomfsPath.parent_path())) {
+            throw std::runtime_error("The --dump-romfs parent directory does not exist");
+        }
+    }
+
     if (!options.dryRun && !std::filesystem::is_directory(output.parent_path())) {
         throw std::runtime_error("The output directory does not exist");
     }
@@ -322,6 +335,12 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
         PublishFile(dumpStage.path() / "code.bin", dumpPath);
         std::cout << "Saved the decrypted original executable (SHA-256 " << Sha256(originalCode) << ") to: "
                   << PathText(dumpPath) << "\nFor analysis of your own copy only. Do not share or commit it.\n";
+    }
+
+    if (!dumpRomfsPath.empty()) {
+        DumpRomFs(work / "romfs.bin", dumpRomfsPath);
+        std::cout << "Saved the RomFS listing, audio parameters and small data files to: " << PathText(dumpRomfsPath)
+                  << "\nFor analysis of your own copy only. Do not share or commit it.\n";
     }
 
     const auto originalRomfsHash = Sha256File(work / "romfs.bin");
