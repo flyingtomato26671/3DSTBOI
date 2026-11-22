@@ -18,7 +18,9 @@ The authored ARM payload uses 1,693 bytes of text padding at `0x2E6200`, with no
 
 ### Dithering
 
-Earlier builds truncated each channel, which darkened images slightly and left visible bands in shadows, vignettes, and other soft gradients. The payload now rounds to nearest and adds a 4x4 ordered (Bayer) dither pattern before reducing to 4 or 5-6 bits. Black and white are preserved exactly, and all channels of a pixel share one threshold so the grain stays gray. `--dither off|light|full` (default `full`) sets the strength; `off` is plain rounding. Flat colors that fall between two representable levels show a faint fine pattern at `full`; use `light` if that bothers you.
+Earlier builds truncated each channel, which darkened images slightly and left visible bands in shadows, vignettes, and other soft gradients. The payload now rounds to nearest and adds a 4x4 ordered (Bayer) dither pattern before reducing to 4 or 5-6 bits, but only where banding would actually show. For each pixel it looks 8 pixels away in each direction (along each axis only the quieter side counts, so sprite edges do not hide a gradient): flat areas and sharp features are rounded without a pattern, and slowly varying areas get the dither. Black and white are preserved exactly, and all channels of a pixel share one threshold so the grain stays gray.
+
+`--dither off|light|full` (default `full`) sets the pattern strength; `off` is plain rounding. Pixel writes after load (`WritePixel`) always round without a pattern. Conversion costs roughly 110-150 emulated ARM instructions per pixel with dithering on and about 65-70 with it off, against 57 in RC1; the cost only applies while textures load.
 
 ## Memory tuning
 
