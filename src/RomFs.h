@@ -17,6 +17,15 @@ namespace Isaac3ds {
     // Reads `length` bytes at `offset` from a RomFS image (level 3 data, as written by ctrtool --romfs).
     using TRomFsReader = std::function<TBytes(std::uint64_t offset, std::uint64_t length)>;
 
+    struct TRomFsLevel3 {
+        std::uint64_t offset = 0; // where the file-system tables start inside the image
+        std::uint64_t size = 0;
+    };
+
+    // The image written by ctrtool is the whole RomFS partition: an IVFC hash-tree header followed by the data. This finds
+    // the file-system data inside it (also accepts a bare file-system image).
+    TRomFsLevel3 LocateRomFsData(const TRomFsReader &read, std::uint64_t imageSize);
+
     // Walks the directory tree of a RomFS image. Throws on malformed or hostile tables.
     std::vector<TRomFsEntry> ListRomFs(const TRomFsReader &read, std::uint64_t imageSize);
 

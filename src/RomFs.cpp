@@ -77,6 +77,58 @@ namespace Isaac3ds {
     }
 }
 
+namespace {
+    // A file-system header starts with its own length (0x28) and has tables that lie inside the data.
+    bool LooksLikeRomFsHeader(const Isaac3ds::TBytes &header, std::uint64_t available) {
+        using namespace Isaac3ds;
+        if (header.size() < 0x28 || Read32(header, 0) != 0x28) {
+            return false;
+        }
+
+        for (const auto at : {std::size_t{0x04}, std::size_t{0x0C}, std::size_t{0x14}, std::size_t{0x1C}}) {
+            if (static_cast<std::uint64_t>(Read32(header, at)) + Read32(header, at + 4) > available) {
+                return false;
+            }
+        }
+
+        return Read32(header, 0x24) <= available && Read32(header, 0x10) >= 0x18;
+    }
+}
+
+Isaac3ds::TRomFsLevel3 Isaac3ds::LocateRomFsData(const TRomFsReader &read, std::uint64_t imageSize) {
+    Require(imageSize >= 0x60, "RomFS image is too small");
+    if (LooksLikeRomFsHeader(read(0, 0x28), imageSize)) {
+        return {0, imageSize};
+    }
+
+    const auto top = read(0, 0x60);
+    Require(Read32(top, 0) == 0x43465649, "The RomFS image has neither an IVFC header nor a file-system header");
+    const auto masterHashSize = Read32(top, 0x08);
+    const auto blockLog2 = Read32(top, 0x4C);
+    const auto level3Size = Read64(top, 0x44);
+    Require(blockLog2 >= 9 && blockLog2 <= 24 && masterHashSize <= 0x10000, "Unexpected IVFC header values");
+    const auto block = std::uint64_t{1} << blockLog2;
+    const auto computed = (0x60 + static_cast<std::uint64_t>(masterHashSize) + block - 1) / block * block;
+    // The computed start is the documented one; the scan only guards against layout variations.
+    auto candidates = std::vector<std::uint64_t>{computed};
+    for (auto at = std::uint64_t{0x1000}; at <= 0x20000 && at < imageSize; at += 0x1000) {
+        candidates.push_back(at);
+    }
+
+    for (const auto start : candidates) {
+        if (start + 0x28 > imageSize) {
+            continue;
+        }
+
+        const auto available = std::min<std::uint64_t>(level3Size != 0 ? level3Size : imageSize, imageSize - start);
+        if (LooksLikeRomFsHeader(read(start, 0x28), available)) {
+            return {start, available};
+        }
+    }
+
+    throw std::runtime_error("Could not find the file-system data inside the RomFS image");
+}
+
 std::vector<Isaac3ds::TRomFsEntry> Isaac3ds::ListRomFs(const TRomFsReader &read, std::uint64_t imageSize) {
     Require(imageSize >= 0x28, "RomFS image is too small");
     const auto header = read(0, 0x28);
@@ -185,7 +237,14 @@ void Isaac3ds::DumpRomFs(const std::filesystem::path &romfsImage, const std::fil
         return data;
     };
 
-    const auto entries = ListRomFs(read, imageSize);
+    const auto level3 = LocateRomFsData(read, imageSize);
+    // Entry offsets are relative to the file-system data; shift them to be absolute in the image file.
+    const auto shifted = [&](std::uint64_t offset, std::uint64_t length) { return read(level3.offset + offset, length); };
+    auto entries = ListRomFs(shifted, level3.size);
+    for (auto &entry : entries) {
+        entry.offset += level3.offset;
+    }
+
     const auto staging = std::filesystem::path(outputDirectory.native() + std::filesystem::path(".partial").native());
     Require(!std::filesystem::exists(staging), "A previous partial RomFS dump exists; remove it first");
     std::filesystem::create_directory(staging);

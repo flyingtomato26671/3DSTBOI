@@ -275,13 +275,28 @@ namespace {
         Put64(outside, 0x64 + 0x10, 1ULL << 40);
         Check(Throws([&] { ListRomFs(readerFor(outside), outside.size()); }), "a file past the end of the image is rejected");
 
+        // ctrtool writes the whole partition: an IVFC header, then the file-system data at the next 0x1000 boundary.
+        auto wrapped = TBytes(0x1000);
+        Write32(wrapped, 0, 0x43465649);
+        Write32(wrapped, 4, 0x10000);
+        Write32(wrapped, 0x08, 0x20);
+        Put64(wrapped, 0x44, image.size());
+        Write32(wrapped, 0x4C, 12);
+        wrapped.insert(wrapped.end(), image.begin(), image.end());
+        wrapped.resize(wrapped.size() + 0x800); // trailing hash levels
+        const auto located = LocateRomFsData(readerFor(wrapped), wrapped.size());
+        Check(located.offset == 0x1000 && located.size == image.size(), "IVFC-wrapped data is located after the header");
+        Check(LocateRomFsData(reader, image.size()).offset == 0, "a bare file-system image is accepted");
+        Check(Throws([&] { LocateRomFsData(readerFor(TBytes(0x2000)), 0x2000); }), "an unrecognised image is rejected");
+
         const auto base = std::filesystem::temp_directory_path() / ("isaac3ds-romfs-test-" + std::to_string(reinterpret_cast<std::uintptr_t>(&image)));
         std::filesystem::remove_all(base);
         std::filesystem::create_directory(base);
-        WriteFile(base / "romfs.bin", image);
+        WriteFile(base / "romfs.bin", wrapped);
         DumpRomFs(base / "romfs.bin", base / "dump");
         Check(std::filesystem::is_regular_file(base / "dump/files/a.xml") && !std::filesystem::exists(base / "dump/files/music/b.ogg"),
             "only small data files are copied");
+        Check(ReadFile(base / "dump/files/a.xml") == TBytes({'<', 'a', '/', '>', '\n'}), "copied data comes from the right place in the image");
         Check(std::filesystem::is_regular_file(base / "dump/listing.txt") && std::filesystem::is_regular_file(base / "dump/ogg-info.txt"),
             "listing and audio info are written");
         Check(Throws([&] { DumpRomFs(base / "romfs.bin", base / "dump"); }), "an existing dump folder is never overwritten");
