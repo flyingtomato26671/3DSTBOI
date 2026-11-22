@@ -33,10 +33,11 @@ namespace {
     };
 
     // The original words at every patch site, as PatchGame expects to find them.
-    const std::array<TSite, 11> sites = {{
+    const std::array<TSite, 12> sites = {{
         {0x2FF304, 0x4000}, {0x2FF314, 0x8000}, {0x2FF254, 0x80}, {0x2E8AC8, 0x2F00000},
         {0x1C9EFC, 0xE92D40F8}, {0x2C47E4, 0xE92D4070}, {0x16571C, 0xEB024DC4},
         {0x2F5DE4, 0x2C4A54}, {0x2F5DE8, 0x2C49CC}, {0x2F5E74, 0x2C4A54}, {0x2F5E78, 0x2C49CC},
+        {0x1055CC, 0xE3A0001E},
     }};
 
     Isaac3ds::TBytes SyntheticCode() {
@@ -133,6 +134,10 @@ namespace {
         Check(Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{minimumHeapMiB - 1, 2}); }), "heap below minimum rejected");
         Check(Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{maximumHeapMiB + 1, 2}); }), "heap above maximum rejected");
         Check(Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{42, 3}); }), "dither above maximum rejected");
+        Check(Read32(ApplyPatches(code, exheader, icon).code, 0x1055CC - 0x100000) == 0xE3A0001E, "default leaves the CPU limit untouched");
+        Check(Read32(ApplyPatches(code, exheader, icon, TPatchOptions{42, 2, 60}).code, 0x1055CC - 0x100000) == 0xE3A0003C, "CPU limit 60 encodes mov r0,#60");
+        Check(Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{42, 2, 29}); }), "CPU limit below 30 rejected");
+        Check(Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{42, 2, 81}); }), "CPU limit above 80 rejected");
         Check(!Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{minimumHeapMiB, 0}); }), "minimum heap accepted");
         Check(!Throws([&] { ApplyPatches(code, exheader, icon, TPatchOptions{maximumHeapMiB, 2}); }), "maximum heap accepted");
     }

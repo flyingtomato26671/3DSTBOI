@@ -20,9 +20,14 @@ namespace Isaac3ds {
     inline constexpr std::uint8_t defaultDither = 2;
     inline constexpr std::uint8_t maximumDither = 2;
 
+    // APT:SetApplicationCpuTimeLimit percentage requested by the original executable (core 1 share).
+    inline constexpr std::uint32_t defaultCpuLimit = 30;
+    inline constexpr std::uint32_t maximumCpuLimit = 80;
+
     struct TPatchOptions {
         std::uint32_t heapMiB = defaultHeapMiB;
         std::uint8_t dither = defaultDither;
+        std::uint32_t cpuLimit = defaultCpuLimit;
     };
 
     struct TPatchResult {

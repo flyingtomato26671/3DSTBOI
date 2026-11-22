@@ -14,6 +14,7 @@ namespace Isaac3ds {
         bool dryRun = false;
         std::uint32_t heapMiB = defaultHeapMiB;
         std::uint8_t dither = defaultDither;
+        std::uint32_t cpuLimit = defaultCpuLimit;
     };
 
     void RunPatcher(const TOptions &options);

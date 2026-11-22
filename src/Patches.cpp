@@ -55,6 +55,8 @@ Isaac3ds::TPatchResult Isaac3ds::ApplyPatches(const TBytes &code, const TBytes &
     Require(options.heapMiB >= minimumHeapMiB && options.heapMiB <= maximumHeapMiB,
         "Heap size must be between " + std::to_string(minimumHeapMiB) + " and " + std::to_string(maximumHeapMiB) + " MiB");
     Require(options.dither <= maximumDither, "Dither strength must be 0, 1, or 2");
+    Require(options.cpuLimit >= defaultCpuLimit && options.cpuLimit <= maximumCpuLimit,
+        "CPU limit must be between " + std::to_string(defaultCpuLimit) + " and " + std::to_string(maximumCpuLimit) + " percent");
     Require(code.size() == 2154496, "Unsupported executable size");
     Require(exheader.size() == 0x800, "Expected a complete 0x800-byte extended header");
 
@@ -87,6 +89,13 @@ Isaac3ds::TPatchResult Isaac3ds::ApplyPatches(const TBytes &code, const TBytes &
         {0x2F5E78, 0x2C49CC, texturePixelReadAddress, "PNG packed pixel reads"},
     }};
     auto report = std::ostringstream{};
+    if (options.cpuLimit != defaultCpuLimit) {
+        // `mov r0, #30` right before the call to APT:SetApplicationCpuTimeLimit (0x110DE0 wrapper).
+        const auto offset = std::uint32_t{0x1055CC} - virtualBase;
+        Require(Read32(code, offset) == 0xE3A0001E, "Unexpected original word at 0x1055CC");
+        Write32(result.code, offset, 0xE3A00000U | options.cpuLimit);
+        report << "0x001055cc: EXPERIMENTAL: APT application CPU time limit [30% -> " << options.cpuLimit << "%]\n";
+    }
     report << "Reference executable SHA-256: " << Sha256(code) << "\n";
     for (const auto &patch : patches) {
         const auto offset = patch.address - virtualBase;
@@ -143,7 +152,7 @@ Isaac3ds::TPatchResult Isaac3ds::PatchGame(const TBytes &code, const TBytes &exh
 
     auto result = ApplyPatches(code, exheader, icon, options);
     const auto resultHash = Sha256(result.code);
-    const auto defaults = options.heapMiB == defaultHeapMiB && options.dither == defaultDither;
+    const auto defaults = options.heapMiB == defaultHeapMiB && options.dither == defaultDither && options.cpuLimit == defaultCpuLimit;
     if (defaults && !pinnedPatchedCodeHash.empty()) {
         Require(resultHash == pinnedPatchedCodeHash, "Patches did not reproduce the pinned reference executable");
     }
