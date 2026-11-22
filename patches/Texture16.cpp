@@ -5,12 +5,19 @@ namespace IsaacOld {
     const volatile unsigned char DitherStrength = 2;
     }
 
-    constexpr unsigned int TileIndex(unsigned int x, unsigned int y, unsigned int width);
-    constexpr unsigned int DitherThreshold(unsigned int x, unsigned int y, unsigned int strength);
-    constexpr unsigned int Quantize(unsigned int value, unsigned int maximum, unsigned int threshold);
-    constexpr unsigned short PackColor(unsigned int format, unsigned int red, unsigned int green,
-        unsigned int blue, unsigned int alpha, unsigned int threshold);
+    // The texture conversion runs once per pixel while textures load, so its helpers are always inlined.
+    constexpr __attribute__((always_inline)) unsigned int TileIndex(unsigned int x, unsigned int y, unsigned int width);
+    constexpr __attribute__((always_inline)) unsigned int DitherThreshold(unsigned int x, unsigned int y,
+        unsigned int strength);
+    constexpr __attribute__((always_inline)) unsigned int Quantize(unsigned int value, unsigned int maximum,
+        unsigned int threshold);
+    constexpr __attribute__((always_inline)) unsigned short PackColor(unsigned int format, unsigned int red,
+        unsigned int green, unsigned int blue, unsigned int alpha, unsigned int threshold);
     constexpr unsigned int Clamp255(unsigned int value);
+    inline __attribute__((always_inline)) unsigned int Distance(const unsigned char *first,
+        const unsigned char *second, unsigned int channels);
+    inline __attribute__((always_inline)) unsigned int LocalChange(const unsigned char *pixel, unsigned int x,
+        unsigned int y, unsigned int width, unsigned int height, unsigned int channels);
     bool IsPackedTexture(const unsigned char *texture);
 }
 
@@ -47,6 +54,38 @@ constexpr unsigned int IsaacOld::Clamp255(unsigned int value) {
     return value > 255 ? 255 : value;
 }
 
+// Difference between two pixels in the channels that show banding: green (a good stand-in for brightness)
+// and, when present, alpha.
+unsigned int IsaacOld::Distance(const unsigned char *first, const unsigned char *second, unsigned int channels) {
+    auto result = first[1] > second[1] ? first[1] - second[1] : second[1] - first[1];
+    if (channels == 4) {
+        const auto alpha = first[3] > second[3] ? first[3] - second[3] : second[3] - first[3];
+        result = alpha > result ? alpha : result;
+    }
+
+    return result;
+}
+
+// How much the image varies around a pixel, measured 8 pixels away in each direction. Along each axis only the
+// quieter side counts, so a pixel next to a sprite's edge still sees its own gradient instead of the edge.
+// Flat areas give 0, soft gradients give small values, and sharp features give large ones.
+unsigned int IsaacOld::LocalChange(const unsigned char *pixel, unsigned int x, unsigned int y, unsigned int width,
+    unsigned int height, unsigned int channels) {
+    const auto reach = 8u;
+    const auto leftSteps = x < reach ? x : reach;
+    const auto rightSteps = width - 1 - x < reach ? width - 1 - x : reach;
+    const auto upSteps = y < reach ? y : reach;
+    const auto downSteps = height - 1 - y < reach ? height - 1 - y : reach;
+    const auto rowSize = channels * width;
+    const auto left = Distance(pixel, pixel - channels * leftSteps, channels);
+    const auto right = Distance(pixel, pixel + channels * rightSteps, channels);
+    const auto up = Distance(pixel, pixel - rowSize * upSteps, channels);
+    const auto down = Distance(pixel, pixel + rowSize * downSteps, channels);
+    const auto horizontal = left < right ? left : right;
+    const auto vertical = up < down ? up : down;
+    return horizontal > vertical ? horizontal : vertical;
+}
+
 constexpr unsigned short IsaacOld::PackColor(unsigned int format, unsigned int red, unsigned int green,
     unsigned int blue, unsigned int alpha, unsigned int threshold) {
     if (format == 1) {
@@ -66,11 +105,33 @@ int IsaacOld::SwizzleTexture(unsigned int format, unsigned int width, unsigned i
 
     const auto channels = format == 1 ? 3u : 4u;
     const auto strength = static_cast<unsigned int>(DitherStrength);
+    // The 4x4 dither pattern for the chosen strength, computed once per texture.
+    unsigned char thresholds[16];
+    for (auto index = 0u; index < 16; ++index) {
+        thresholds[index] = static_cast<unsigned char>(DitherThreshold(index & 3, index >> 2, strength));
+    }
+
+    // Dither only where banding would show: pixels whose surroundings vary slowly (more than zero, at most
+    // about four quantization steps over 8 pixels). Flat areas and sharp edges are rounded without a pattern.
+    const auto limit = format == 1 ? 32u : 68u;
     for (auto y = 0u; y < height; ++y) {
         for (auto x = 0u; x < width; ++x) {
             const auto alpha = format == 1 ? 255u : source[3];
-            destination[TileIndex(x, height - y - 1, width)] =
-                PackColor(format, source[0], source[1], source[2], alpha, DitherThreshold(x, y, strength));
+            const auto plain = PackColor(format, source[0], source[1], source[2], alpha, 127);
+            auto packed = plain;
+            if (strength != 0) {
+                const auto dithered = PackColor(format, source[0], source[1], source[2], alpha,
+                    thresholds[((y & 3) << 2) | (x & 3)]);
+                // The neighbourhood only needs checking when the pattern would actually change this pixel.
+                if (dithered != plain) {
+                    const auto change = LocalChange(source, x, y, width, height, channels);
+                    if (change != 0 && change <= limit) {
+                        packed = dithered;
+                    }
+                }
+            }
+
+            destination[TileIndex(x, height - y - 1, width)] = packed;
             source += channels;
         }
     }
@@ -117,8 +178,7 @@ int IsaacOld::WritePixel(unsigned char *texture, unsigned int x, unsigned int y,
     *pixel = PackColor(texture[24], Clamp255(static_cast<unsigned int>(color[0] * 255.0f)),
         Clamp255(static_cast<unsigned int>(color[1] * 255.0f)),
         Clamp255(static_cast<unsigned int>(color[2] * 255.0f)),
-        Clamp255(static_cast<unsigned int>(color[3] * 255.0f)),
-        DitherThreshold(x, y, static_cast<unsigned int>(DitherStrength)));
+        Clamp255(static_cast<unsigned int>(color[3] * 255.0f)), DitherThreshold(0, 0, 0));
     return 1;
 }
 

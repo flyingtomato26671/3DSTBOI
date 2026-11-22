@@ -39,6 +39,36 @@ def Threshold(x, y, strength):
     return 127 + ((centered * min(strength, 2)) >> 1)
 
 
+def Distance(source, first, second, channels):
+    result = abs(source[first + 1] - source[second + 1])
+    if channels == 4:
+        result = max(result, abs(source[first + 3] - source[second + 3]))
+
+    return result
+
+
+def LocalChange(source, x, y, width, height, channels):
+    reach = 8
+    here = (y * width + x) * channels
+    left = (y * width + x - min(x, reach)) * channels
+    right = (y * width + x + min(width - 1 - x, reach)) * channels
+    up = ((y - min(y, reach)) * width + x) * channels
+    down = ((y + min(height - 1 - y, reach)) * width + x) * channels
+    horizontal = min(Distance(source, here, left, channels), Distance(source, here, right, channels))
+    vertical = min(Distance(source, here, up, channels), Distance(source, here, down, channels))
+    return max(horizontal, vertical)
+
+
+def AdaptiveThreshold(source, x, y, width, height, channels, fmt, strength):
+    limit = 32 if fmt == 1 else 68
+    if strength:
+        change = LocalChange(source, x, y, width, height, channels)
+        if 0 < change <= limit:
+            return Threshold(x, y, strength)
+
+    return Threshold(0, 0, 0)
+
+
 def Quantize(value, maximum, threshold):
     return (value * maximum + threshold) // 255
 
@@ -89,7 +119,15 @@ def TestSwizzle(payload, addresses):
         machine = Machine(payload, addresses, strength)
         for fmt, channels in ((1, 3), (2, 4)):
             for width, height in sizes:
-                source = bytearray(rng.randrange(256) for _ in range(width * height * channels))
+                if rng.random() < 0.5:
+                    source = bytearray(rng.randrange(256) for _ in range(width * height * channels))
+                else:
+                    # smooth ramps with a little noise: exercises the dithered branch
+                    source = bytearray()
+                    for y in range(height):
+                        for x in range(width):
+                            base = (x * 3 + y * 2 + rng.randrange(3)) & 255
+                            source += bytes([min(255, base + 5 * c) for c in range(channels)])
                 # Include the extremes so endpoints are checked.
                 source[0:channels] = bytes([0] * channels)
                 source[channels:2 * channels] = bytes([255] * channels)
@@ -105,7 +143,8 @@ def TestSwizzle(payload, addresses):
                     for x in range(width):
                         r, g, b = source[position], source[position + 1], source[position + 2]
                         a = source[position + 3] if fmt == 2 else 255
-                        expected[TileIndex(x, height - y - 1, width)] = Pack(fmt, r, g, b, a, Threshold(x, y, strength))
+                        threshold = AdaptiveThreshold(source, x, y, width, height, channels, fmt, strength)
+                        expected[TileIndex(x, height - y - 1, width)] = Pack(fmt, r, g, b, a, threshold)
                         position += channels
 
                 assert list(actual) == expected, "Swizzle mismatch: strength %d format %d %dx%d" % (strength, fmt, width, height)
@@ -131,6 +170,50 @@ def TestEndpointsAndFlatColors(payload, addresses):
                 assert all(p == expected for p in pixels), "Flat %d not preserved (strength %d, format %d)" % (value, strength, fmt)
 
     print("Black and white are preserved at every strength")
+
+
+def TestAdaptive(payload, addresses):
+    machine = Machine(payload, addresses, 2)
+    uc = machine.uc
+    destination = Scratch + 0x100000
+
+    def Convert(fmt, channels, width, height, pixel):
+        source = bytearray()
+        for y in range(height):
+            for x in range(width):
+                source += bytes(pixel(x, y))
+
+        uc.mem_write(Scratch, bytes(source))
+        machine.Call("SwizzleTexture", [fmt, width, height, Scratch], [destination])
+        raw = struct.unpack("<%dH" % (width * height), uc.mem_read(destination, width * height * 2))
+        grid = {}
+        for y in range(height):
+            for x in range(width):
+                grid[(x, y)] = raw[TileIndex(x, height - y - 1, width)]
+
+        return grid
+
+    for fmt, channels in ((1, 3), (2, 4)):
+        # A flat color that sits between two representable levels must stay perfectly flat.
+        flat = Convert(fmt, channels, 32, 32, lambda x, y: [100, 100, 100, 100][:channels])
+        assert len(set(flat.values())) == 1, "flat area was patterned (format %d)" % fmt
+        # A hard edge must not be dithered either.
+        edge = Convert(fmt, channels, 32, 32, lambda x, y: ([0] * channels) if x < 16 else ([255] * channels))
+        assert len(set(edge.values())) == 2, "hard edge was patterned (format %d)" % fmt
+        # A slow ramp must show both neighbouring levels mixed together (the dither).
+        ramp = Convert(fmt, channels, 64, 64, lambda x, y: [(60 + x // 2)] * channels)
+        row = [ramp[(x, 20)] for x in range(64)]
+        transitions = sum(1 for a, b in zip(row, row[1:]) if a != b)
+        plain = Machine(payload, addresses, 0)
+        uc.mem_write(Scratch, bytes(bytearray(v for y in range(64) for x in range(64) for v in [60 + x // 2] * channels)))
+        plain.uc.mem_write(Scratch, bytes(bytearray(v for y in range(64) for x in range(64) for v in [60 + x // 2] * channels)))
+        plain.Call("SwizzleTexture", [fmt, 64, 64, Scratch], [destination])
+        raw = struct.unpack("<4096H", plain.uc.mem_read(destination, 8192))
+        baseline = [raw[TileIndex(x, 64 - 20 - 1, 64)] for x in range(64)]
+        steps = sum(1 for a, b in zip(baseline, baseline[1:]) if a != b)
+        assert transitions >= 3 * max(steps, 1), "slow ramp was not dithered (format %d: %d vs %d plain transitions)" % (fmt, transitions, steps)
+
+    print("Flat areas and hard edges stay clean; slow ramps are dithered")
 
 
 def TestWritePixel(payload, addresses):
@@ -166,7 +249,7 @@ def TestWritePixel(payload, addresses):
                     product = struct.unpack("<f", struct.pack("<f", struct.unpack("<f", struct.pack("<f", component))[0] * 255.0))[0]
                     channels.append(min(255, max(0, int(product))))
 
-                expected = Pack(fmt, *channels, Threshold(x, y, strength))
+                expected = Pack(fmt, *channels, Threshold(0, 0, 0))
                 assert actual == expected, "WritePixel mismatch %04x != %04x" % (actual, expected)
 
     print("WritePixel matches the model, including clamping")
@@ -181,6 +264,7 @@ def Main():
     payload, addresses = builder.BuildPayload(patchPath, arguments.output.resolve())
     TestSwizzle(payload, addresses)
     TestEndpointsAndFlatColors(payload, addresses)
+    TestAdaptive(payload, addresses)
     TestWritePixel(payload, addresses)
     print("Payload emulation tests passed")
 

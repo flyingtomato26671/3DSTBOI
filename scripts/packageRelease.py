@@ -68,6 +68,8 @@ def PackageRelease():
         for name in ["README.md", "COMPATIBILITY.md", "INPUTS_EXPLAINED.md", "PATCHES.md", "THIRD_PARTY.md", "LICENSE"]:
             shutil.copy2(projectPath / name, stagingPath / name)
 
+        (stagingPath / "docs").mkdir()
+        shutil.copy2(projectPath / "docs/DIAGNOSTICS.md", stagingPath / "docs/DIAGNOSTICS.md")
         shutil.copy2(projectPath / "licenses/GPL-3.0.txt", stagingPath / "licenses/GPL-3.0.txt")
         for archivePath in sources:
             shutil.copy2(archivePath, stagingPath / "tools/sources" / archivePath.name)

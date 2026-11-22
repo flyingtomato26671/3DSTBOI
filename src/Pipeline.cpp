@@ -235,6 +235,18 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
         throw std::runtime_error("Output or report already exists. Choose a new output name; files are never overwritten.");
     }
 
+    auto dumpPath = std::filesystem::path{};
+    if (!options.dumpCode.empty()) {
+        dumpPath = std::filesystem::weakly_canonical(std::filesystem::absolute(options.dumpCode));
+        if (dumpPath == input || dumpPath == output || std::filesystem::exists(dumpPath)) {
+            throw std::runtime_error("The --dump-code file already exists. Choose a new name; files are never overwritten.");
+        }
+
+        if (!std::filesystem::is_directory(dumpPath.parent_path())) {
+            throw std::runtime_error("The --dump-code directory does not exist");
+        }
+    }
+
     if (!options.dryRun && !std::filesystem::is_directory(output.parent_path())) {
         throw std::runtime_error("The output directory does not exist");
     }
@@ -301,6 +313,15 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
     if (Read64(exheader, 0x200) != metadata.titleId || Read64(exheader, 0x1c8) != metadata.titleId ||
         Read64(exheader, 0x1C0) != 0x400000) {
         throw std::runtime_error("Title identity or save-data mapping is inconsistent");
+    }
+
+    if (!dumpPath.empty()) {
+        const auto originalCode = ReadFile(work / "exefs/code.bin");
+        auto dumpStage = CWorkspace(dumpPath.parent_path());
+        WriteFile(dumpStage.path() / "code.bin", originalCode);
+        PublishFile(dumpStage.path() / "code.bin", dumpPath);
+        std::cout << "Saved the decrypted original executable (SHA-256 " << Sha256(originalCode) << ") to: "
+                  << PathText(dumpPath) << "\nFor analysis of your own copy only. Do not share or commit it.\n";
     }
 
     const auto originalRomfsHash = Sha256File(work / "romfs.bin");

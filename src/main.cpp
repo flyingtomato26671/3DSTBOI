@@ -18,6 +18,8 @@ void Isaac3ds::PrintHelp() {
                  "  --heap-mib N            EXPERIMENTAL: ordinary heap size in MiB, 32 to 47 (default 42)\n"
                  "                          Lower values leave more memory for textures; higher values for audio\n"
                  "  --dither off|light|full Texture dithering to hide banding in gradients (default full)\n"
+                 "  --dump-code FILE        Also save the decrypted original executable (code.bin) for analysis\n"
+                 "                          of your own copy; never share or commit it\n"
                  "  --dry-run               Decrypt and check all patches without building a CIA\n"
                  "  -h, --help              Show this help\n\n"
                  "The input is never modified and existing outputs are never overwritten.\n"
@@ -71,6 +73,8 @@ int Isaac3ds::Main(const std::vector<std::string> &arguments) {
                 }
 
                 options.heapMiB = static_cast<std::uint32_t>(number);
+            } else if (argument == "--dump-code") {
+                options.dumpCode = value();
             } else if (argument == "--dither") {
                 const auto text = value().u8string();
                 if (text == "off") {

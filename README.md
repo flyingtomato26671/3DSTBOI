@@ -157,6 +157,8 @@ Old 3DS memory is tight, and the reports so far are consistent with memory press
 
 Higher values favor audio; lower values favor graphics. Patched CIAs share one title ID, so install one at a time. If gradients look grainy rather than smooth, try `--dither light`; `--dither off` restores plain rounding. Settings other than the defaults are listed as experimental in the report.
 
+Which cause it is has not been confirmed. Another candidate is a thread meant for the New 3DS extra core that cannot run properly on an Old 3DS. See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the observations, hypotheses, and the experiments that tell them apart. To help analyze your own copy, `--dry-run --dump-code code-original.bin` saves the decrypted original executable; do not share or commit it.
+
 ## Automatic builds and releases
 
 GitHub Actions builds Linux and Windows packages on pushes and pull requests. Pushing a version tag publishes both packages and `SHA256SUMS.txt` as a release after both builds pass. The tag must match the version in `CMakeLists.txt`:
