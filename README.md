@@ -149,7 +149,7 @@ Run `--help` for all options. Include the patch report and console/crash details
 
 ## Known issues and tuning
 
-Old 3DS memory is tight, and the reports so far are consistent with memory pressure rather than CPU speed: music that is missing or choppy (shorter tracks like the shop theme work), a previous room's background staying, doors disappearing, and crashes against Mom. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
+Old 3DS memory is tight. Music remains inconsistent: many tracks stutter or stop, while one guitar-like intensity layer heard in a room with many enemies reportedly plays almost cleanly over the regular music. The boss-defeat track has lasted approximately 1 minute 37 seconds in the latest report. Overall performance appears slightly improved, but still needs work. Missing/stale graphics and crashes against Mom also remain reported. The patch splits 80 MiB between the ordinary heap (audio and game objects) and the linear heap (textures). Try other splits and see which symptoms change:
 
 ```sh
 ./isaac3ds-patcher "Isaac.cia" --seed-file "title-seed.bin" --heap-mib 45 -o "Isaac-heap45.cia"
