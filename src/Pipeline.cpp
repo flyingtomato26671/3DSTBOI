@@ -327,7 +327,7 @@ void Isaac3ds::RunPatcher(const TOptions &options) {
     const auto originalRomfsHash = Sha256File(work / "romfs.bin");
     std::cout << "Checking the complete patch profile..." << std::endl;
     const auto patched = PatchGame(ReadFile(work / "exefs/code.bin"), exheader,
-        ReadFile(work / "exefs/icon.bin"), TPatchOptions{options.heapMiB, options.dither});
+        ReadFile(work / "exefs/icon.bin"), TPatchOptions{options.heapMiB, options.dither, options.cpuLimit});
     std::cout << patched.report;
     auto manualArguments = std::vector<std::string>{"-v", "-y", "-n", "1", "--romfs=" + PathText(work / "manual-romfs.bin")};
     if (!seedDatabase.empty()) {

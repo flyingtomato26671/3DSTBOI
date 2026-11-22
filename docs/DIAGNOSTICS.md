@@ -51,3 +51,14 @@ Run the patcher with `--dry-run --dump-code code-original.bin` on your own CIA. 
 - Never commit game files, seeds, or dumped executables.
 - Treat any claimed address or behavior as a hypothesis until it is verified against the executable whose SHA-256 is in `COMPATIBILITY.md`. The patcher already refuses to run if a patch site does not hold the expected original word.
 - Payload changes go through `patches/verifyTexturePayload.py` and `patches/testTexturePayload.py`, and unpinned builds stay marked experimental until tested on a console.
+
+## Experiment: `--cpu-limit` (audio on a physical Old 3DS)
+
+Verified in the original executable: it calls `APT:SetApplicationCpuTimeLimit` with 30 (`mov r0,#30` at 0x1055CC,
+IPC wrapper at 0x121BF4), so the game's core-1 workers get at most 30 % of that core. Unverified hypothesis: the audio or
+decoding worker needs more than that when the scene is busy, so the DSP runs dry and the game never restarts the track.
+
+`--cpu-limit N` (30 to 80, default 30 = the game's own value, no change) rewrites only that immediate. It is an
+experiment to confirm or discard the hypothesis, not a fix. Suggested test: build with `--cpu-limit 50`, play a basement
+floor with several enemies, and note how long the floor music lasts and whether the frame rate changes. Repeat with 70.
+A very high value may starve system services, so raise it gradually. If nothing changes, the hypothesis is discarded.
