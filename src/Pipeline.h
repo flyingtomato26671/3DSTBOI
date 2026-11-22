@@ -11,6 +11,7 @@ namespace Isaac3ds {
         std::filesystem::path seedDatabase;
         std::filesystem::path seedFile;
         std::filesystem::path dumpCode;
+        std::filesystem::path dumpRomfs;
         bool dryRun = false;
         std::uint32_t heapMiB = defaultHeapMiB;
         std::uint8_t dither = defaultDither;

@@ -1,8 +1,10 @@
 #include "Patches.h"
+#include "RomFs.h"
 #include "TextureData.h"
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -170,6 +172,122 @@ namespace {
         rebuilt[0xD] ^= 1;
         Check(!Throws([&] { VerifyRebuiltProfile(rebuilt, patched.exheader); }), "only the two regenerated bits may differ");
     }
+
+    void Put64(Isaac3ds::TBytes &data, std::size_t offset, std::uint64_t value) {
+        Isaac3ds::Write32(data, offset, static_cast<std::uint32_t>(value));
+        Isaac3ds::Write32(data, offset + 4, static_cast<std::uint32_t>(value >> 32));
+    }
+
+    void PutName(Isaac3ds::TBytes &data, std::size_t offset, const std::string &name) {
+        for (auto i = std::size_t{0}; i < name.size(); ++i) {
+            data[offset + 2 * i] = static_cast<std::uint8_t>(name[i]);
+        }
+    }
+
+    Isaac3ds::TBytes SyntheticOgg() {
+        auto ogg = Isaac3ds::TBytes(58 + 27);
+        std::copy_n("OggS", 4, ogg.begin());
+        ogg[26] = 1;
+        ogg[27] = 30;
+        ogg[28] = 1;
+        std::copy_n("vorbis", 6, ogg.begin() + 29);
+        ogg[28 + 11] = 2;
+        Isaac3ds::Write32(ogg, 28 + 12, 44100);
+        Isaac3ds::Write32(ogg, 28 + 20, 128000);
+        std::copy_n("OggS", 4, ogg.begin() + 58);
+        Put64(ogg, 58 + 6, 88200);
+        return ogg;
+    }
+
+    // Root with a.xml and a "music" folder holding b.ogg; hash tables are empty because the parser ignores them.
+    Isaac3ds::TBytes SyntheticRomFs(const std::string &folderName = "music") {
+        using namespace Isaac3ds;
+        const auto ogg = SyntheticOgg();
+        const auto xml = std::string("<a/>\n");
+        auto image = TBytes(0xBC + 8 + ogg.size());
+        Write32(image, 0x00, 0x28);
+        Write32(image, 0x0C, 0x28);
+        Write32(image, 0x10, 0x3C);
+        Write32(image, 0x1C, 0x64);
+        Write32(image, 0x20, 0x58);
+        Write32(image, 0x24, 0xBC);
+        // Directory table: root at 0, the folder at 0x18.
+        Write32(image, 0x28 + 0x04, 0xFFFFFFFF);
+        Write32(image, 0x28 + 0x08, 0x18);
+        Write32(image, 0x28 + 0x0C, 0);
+        Write32(image, 0x28 + 0x10, 0xFFFFFFFF);
+        Write32(image, 0x28 + 0x14, 0);
+        Write32(image, 0x28 + 0x18 + 0x04, 0xFFFFFFFF);
+        Write32(image, 0x28 + 0x18 + 0x08, 0xFFFFFFFF);
+        Write32(image, 0x28 + 0x18 + 0x0C, 0x2C);
+        Write32(image, 0x28 + 0x18 + 0x10, 0xFFFFFFFF);
+        Write32(image, 0x28 + 0x18 + 0x14, static_cast<std::uint32_t>(folderName.size() * 2));
+        PutName(image, 0x28 + 0x18 + 0x18, folderName);
+        // File table: a.xml at 0, b.ogg at 0x2C.
+        Write32(image, 0x64 + 0x04, 0xFFFFFFFF);
+        Put64(image, 0x64 + 0x08, 0);
+        Put64(image, 0x64 + 0x10, xml.size());
+        Write32(image, 0x64 + 0x18, 0xFFFFFFFF);
+        Write32(image, 0x64 + 0x1C, 10);
+        PutName(image, 0x64 + 0x20, "a.xml");
+        Write32(image, 0x64 + 0x2C + 0x00, 0x18);
+        Write32(image, 0x64 + 0x2C + 0x04, 0xFFFFFFFF);
+        Put64(image, 0x64 + 0x2C + 0x08, 8);
+        Put64(image, 0x64 + 0x2C + 0x10, ogg.size());
+        Write32(image, 0x64 + 0x2C + 0x18, 0xFFFFFFFF);
+        Write32(image, 0x64 + 0x2C + 0x1C, 10);
+        PutName(image, 0x64 + 0x2C + 0x20, "b.ogg");
+        std::copy(xml.begin(), xml.end(), image.begin() + 0xBC);
+        std::copy(ogg.begin(), ogg.end(), image.begin() + 0xBC + 8);
+        return image;
+    }
+
+    void TestRomFs() {
+        using namespace Isaac3ds;
+        const auto image = SyntheticRomFs();
+        const auto reader = [&](std::uint64_t offset, std::uint64_t length) {
+            if (offset + length > image.size()) {
+                throw std::runtime_error("read past the end");
+            }
+
+            return TBytes(image.begin() + static_cast<std::ptrdiff_t>(offset), image.begin() + static_cast<std::ptrdiff_t>(offset + length));
+        };
+
+        const auto entries = ListRomFs(reader, image.size());
+        Check(entries.size() == 2 && entries[0].path == "a.xml" && entries[1].path == "music/b.ogg", "RomFS tree is listed with paths");
+        Check(entries.size() == 2 && entries[0].size == 5 && entries[1].offset == 0xBC + 8, "RomFS sizes and offsets are absolute");
+        const auto ogg = SyntheticOgg();
+        const auto described = DescribeOgg(TBytes(ogg.begin(), ogg.begin() + 58), ogg, ogg.size());
+        Check(described.find("2 ch, 44100 Hz, nominal bitrate 128000 bps, 2.0 s") != std::string::npos, "Ogg parameters are described");
+        Check(DescribeOgg(TBytes(8), TBytes(8), 8).find("not an Ogg") != std::string::npos, "non-Ogg data is reported");
+
+        const auto readerFor = [](const TBytes &data) {
+            return [data](std::uint64_t offset, std::uint64_t length) {
+                return TBytes(data.begin() + static_cast<std::ptrdiff_t>(offset), data.begin() + static_cast<std::ptrdiff_t>(offset + length));
+            };
+        };
+        const auto traversal = SyntheticRomFs("..");
+        Check(Throws([&] { ListRomFs(readerFor(traversal), traversal.size()); }), "a '..' folder name is rejected");
+        auto looping = SyntheticRomFs();
+        Write32(looping, 0x28 + 0x08, 0);
+        Check(Throws([&] { ListRomFs(readerFor(looping), looping.size()); }), "a directory loop is rejected");
+        auto outside = SyntheticRomFs();
+        Put64(outside, 0x64 + 0x10, 1ULL << 40);
+        Check(Throws([&] { ListRomFs(readerFor(outside), outside.size()); }), "a file past the end of the image is rejected");
+
+        const auto base = std::filesystem::temp_directory_path() / ("isaac3ds-romfs-test-" + std::to_string(reinterpret_cast<std::uintptr_t>(&image)));
+        std::filesystem::remove_all(base);
+        std::filesystem::create_directory(base);
+        WriteFile(base / "romfs.bin", image);
+        DumpRomFs(base / "romfs.bin", base / "dump");
+        Check(std::filesystem::is_regular_file(base / "dump/files/a.xml") && !std::filesystem::exists(base / "dump/files/music/b.ogg"),
+            "only small data files are copied");
+        Check(std::filesystem::is_regular_file(base / "dump/listing.txt") && std::filesystem::is_regular_file(base / "dump/ogg-info.txt"),
+            "listing and audio info are written");
+        Check(Throws([&] { DumpRomFs(base / "romfs.bin", base / "dump"); }), "an existing dump folder is never overwritten");
+        Check(!std::filesystem::exists(base / "dump.partial"), "no partial folder is left behind");
+        std::filesystem::remove_all(base);
+    }
 }
 
 int main() {
@@ -177,6 +295,7 @@ int main() {
     TestPatchApplication();
     TestOptions();
     TestRejections();
+    TestRomFs();
     if (failures != 0) {
         std::cerr << failures << " check(s) failed\n";
         return 1;
