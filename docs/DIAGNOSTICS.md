@@ -6,18 +6,18 @@ Working notes for the Old 3DS build. Physical-console observations below are rep
 
 | Symptom | Observation |
 | --- | --- |
-| Music | On a physical Old 3DS, music still has severe stuttering, interruptions, and changes in playback speed. Most tracks have stopped after a few seconds in earlier tests. The boss-defeat track has been the longest-running example: the latest reported playback lasted approximately 1 minute 37 seconds. |
+| Music | On a physical Old 3DS, music still has stuttering, interruptions, and changes in playback speed, although one recent test suggests slight overall performance improvement. Most tracks have stopped after a few seconds in earlier tests. The boss-defeat track played for approximately 1 minute 37 seconds in the latest report. A separate guitar-like intensity layer/track heard in a room with many enemies overlaps the regular game music and reportedly plays almost perfectly, with very little stuttering. |
 | Dithering and transparency | The new ordered-dithering method has been tested on a physical Old 3DS. Its transparency effects look very good; preserve this working behavior when investigating audio. |
 | Sprites | Some sprites fail to load, with doors reported most often. |
 | Rooms | A room sometimes retains the previous room's background or layout. |
 | Crashes | Mom's boss has been reported to crash the console. |
-| Frame rate | Earlier tests reported about 50-60 FPS in a 1v1 boss room even with many tears on screen. Rooms with many enemies lag, and fireplaces lag until extinguished. |
+| Frame rate | Performance appears to have improved slightly in the latest hardware test, but still needs work. Earlier tests reported about 50-60 FPS in a 1v1 boss room even with many tears on screen. Rooms with many enemies lag, and fireplaces lag until extinguished. |
 
 ## Working hypotheses
 
 ### 1. Audio buffering, scheduling, or memory pressure (open)
 
-The persistent music stutter on real hardware is the main unresolved issue. The long boss-defeat playback suggests that audio can continue for substantially longer than the few-second failures seen with many other tracks, but it does not identify whether the bottleneck is streaming, buffer refill, scheduling, memory allocation, or audio decoding. Playback speed changes are also consistent with an audio timing/buffer problem, but are not enough to distinguish its cause.
+The persistent music stutter on real hardware is the main unresolved issue. Playback is not uniformly broken: the boss-defeat track lasted approximately 1:37, and a guitar-like intensity layer heard in a room with many enemies reportedly overlaps the normal music while playing almost cleanly. This contrast may help isolate the failure. It could indicate differences in track format, streaming versus preloaded audio, buffer size, loop/segment handling, channel priority, or mixing path, but none of those explanations is confirmed. Record the exact room, track/layer, and whether the underlying music continues during the guitar-like part. The slight overall performance improvement is encouraging but does not establish that CPU load is the audio cause.
 
 The heap split remains worth measuring: the default ordinary heap is 42 MiB and the remainder of the 80 MiB application memory is used for the linear heap. Raising `--heap-mib` may help ordinary allocations used by audio and game objects, but it reduces space available to textures. Compare the same scene and track at several heap settings and record both audio and graphics symptoms.
 
@@ -39,9 +39,9 @@ Enemy updates and fireplaces remain possible causes of frame drops. The ditherin
 
 1. Compare the same music track and playback interval at `--heap-mib 36`, `42`, and `47`. Record whether it stutters, changes speed, or stops, and whether sprites/rooms become worse.
 2. Repeat the same test with the same dither setting each time. Do not change dithering and heap size simultaneously.
-3. Record which track is playing, elapsed playback time before the first interruption, whether the game is in a room/menu/boss fight, and whether gameplay activity changes the stutter.
+3. Record which track/layer is playing, elapsed playback time before the first interruption, room/enemy count, and whether the guitar-like intensity layer starts while the normal music continues. Compare the two layers separately if possible.
 4. Record FPS in an empty room, with fireplaces lit and extinguished, and with increasing enemy counts. Keep this separate from the audio test.
-5. If available, compare a short track and a long track under identical conditions. The boss-defeat track's approximately 1:37 playback is a useful reference point, not proof that the whole audio path is healthy.
+5. If available, compare a short track, the boss-defeat track, and the guitar-like intensity layer under identical conditions. The guitar-like layer's near-clean playback is especially useful as a comparison case, not proof that the whole audio path is healthy.
 
 ## Data that would narrow the audio cause
 
